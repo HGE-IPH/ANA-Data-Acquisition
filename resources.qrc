@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/plugins/ana_data_acquisition" >
+        <file>icon.png</file>
+    </qresource>
+</RCC>
