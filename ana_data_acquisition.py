@@ -163,7 +163,7 @@ class ANADataAcquisition:
         """
 
         icon = QIcon(icon_path)
-        action = QAction(icon, text, parent)
+        action = QAction(text, parent)
         action.triggered.connect(callback)
         action.setEnabled(enabled_flag)
 
