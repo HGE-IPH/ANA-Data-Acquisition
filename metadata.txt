@@ -10,9 +10,9 @@ version=0.1
 author=HGE-IPH
 email=ingridp8396@gmail.com
 
-about=The ANA Data Acquisition tool automatically downloads several pluviometric and fluviometric stations provided by the National Water Agency (ANA). It was designed as part of the Large Basin Model (MGB) plugin in Quantum GIS software, however, due to the different uses that hydrological data can have, the tool is now also available in an independent plugin. In addition to the features present in the MGB plugin, the ANA Data Acquisition plugin offers the option to select the stations of interest directly in the QGIS interface.
+about=The ANA Data Acquisition tool automatically downloads several pluviometric and fluviometric stations provided by the National Water Agency (ANA). It was designed as part of the Large Basin Model (MGB) plugin in Quantum GIS software, however, due to the different uses that hydrological data can have, the tool is now also available in an independent plugin. In addition to the features present in the MGB plugin, the ANA Data Acquisition plugin offers the option to select the stations of interest directly in the QGIS interface. Plugin's manual available at <https://www.ufrgs.br/hge/ana-data-acquisition/>.  
 
-tracker=https://github.com/HGE-IPH/ANA-Data-Acquisition/issues
+tracker=https://github.com/HGE-IPH/ANA-Data-Acquisition
 repository=https://github.com/HGE-IPH/ANA-Data-Acquisition
 # End of mandatory metadata
 
@@ -25,7 +25,7 @@ hasProcessingProvider=no
 # Tags are comma separated with spaces allowed
 tags=hydrology;data download;precipitation;discharge;ANA
 
-homepage=https://github.com/HGE-IPH/ANA-Data-Acquisition
+homepage=https://www.ufrgs.br/hge/
 category=Plugins
 icon=icon.png
 # experimental flag
