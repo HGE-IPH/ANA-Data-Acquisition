@@ -23,14 +23,16 @@
 """
 from PyQt5.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, pyqtSlot
 from PyQt5.QtGui import QIcon
+from PyQt5 import QtGui
 from PyQt5.QtWidgets import QAction, QFileDialog, QMessageBox, QProgressBar
 from qgis.gui import QgsMessageBar
 from qgis.core import QgsVectorLayer, QgsProject
 
 from qgis.utils import iface
+
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction
+from qgis.PyQt.QtWidgets import QAction, QDockWidget
 # Initialize Qt resources from file resources.py
 from .resources import *
 
@@ -39,6 +41,12 @@ from .ana_data_acquisition_dockwidget import ANADataAcquisitionDockWidget
 import os.path
 import os
 import shutil
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from pathlib import Path 
+
 
 
 class ANADataAcquisition:
@@ -54,27 +62,7 @@ class ANADataAcquisition:
         """
         # Save reference to the QGIS interface
         self.iface = iface
-        
-        # self.layers = {'prec': None, 'dis': None, 'level': None}
 
-        # initialize plugin directory
-        self.plugin_dir = os.path.dirname(__file__)
-
-        # initialize locale
-        locale = QSettings().value('locale/userLocale')[0:2]
-        locale_path = os.path.join(
-            self.plugin_dir,
-            'i18n',
-            'ANADataAcquisition_{}.qm'.format(locale))
-
-        if os.path.exists(locale_path):
-            self.translator = QTranslator()
-            self.translator.load(locale_path)
-            QCoreApplication.installTranslator(self.translator)
-
-        # Declare instance attributes
-        self.actions = []
-        self.menu = self.tr(u'&ANA Data Acquisition')
         # TODO: We are going to let the user set this up in a future iteration
         self.toolbar = self.iface.addToolBar(u'ANADataAcquisition')
         self.toolbar.setObjectName(u'ANADataAcquisition')
@@ -82,108 +70,21 @@ class ANADataAcquisition:
         #print "** INITIALIZING ANADataAcquisition"
 
         self.pluginIsActive = False
-        # self.dockwidget = None
-        
+
+        self.arquivos_ava = []
+        self.dirname = None
+
         self.dockwidget = ANADataAcquisitionDockWidget()
-        
-        os.chdir('C:')
-        self.dir = 'C:/'
+
         self.plugdir = os.path.dirname(__file__)
         for i in self.plugdir:
             if i == '\\':
                 self.plugdir = self.plugdir.replace('\\', '/')
-                
-       # self.dockwidget.comboBox.currentIndexChanged.connect(self.insertMap)
+
         self.dockwidget.comboBox.currentIndexChanged.connect(self.mapInsert)
 
-    # noinspection PyMethodMayBeStatic
-    def tr(self, message):
-        """Get the translation for a string using Qt translation API.
-
-        We implement this ourselves since we do not inherit QObject.
-
-        :param message: String for translation.
-        :type message: str, QString
-
-        :returns: Translated version of message.
-        :rtype: QString
-        """
-        # noinspection PyTypeChecker,PyArgumentList,PyCallByClass
-        return QCoreApplication.translate('ANADataAcquisition', message)
-
-
-    def add_action(
-        self,
-        icon_path,
-        text,
-        callback,
-        enabled_flag=True,
-        add_to_menu=True,
-        add_to_toolbar=True,
-        status_tip=None,
-        whats_this=None,
-        parent=None):
-        """Add a toolbar icon to the toolbar.
-
-        :param icon_path: Path to the icon for this action. Can be a resource
-            path (e.g. ':/plugins/foo/bar.png') or a normal file system path.
-        :type icon_path: str
-
-        :param text: Text that should be shown in menu items for this action.
-        :type text: str
-
-        :param callback: Function to be called when the action is triggered.
-        :type callback: function
-
-        :param enabled_flag: A flag indicating if the action should be enabled
-            by default. Defaults to True.
-        :type enabled_flag: bool
-
-        :param add_to_menu: Flag indicating whether the action should also
-            be added to the menu. Defaults to True.
-        :type add_to_menu: bool
-
-        :param add_to_toolbar: Flag indicating whether the action should also
-            be added to the toolbar. Defaults to True.
-        :type add_to_toolbar: bool
-
-        :param status_tip: Optional text to show in a popup when mouse pointer
-            hovers over the action.
-        :type status_tip: str
-
-        :param parent: Parent widget for the new action. Defaults None.
-        :type parent: QWidget
-
-        :param whats_this: Optional text to show in the status bar when the
-            mouse pointer hovers over the action.
-
-        :returns: The action that was created. Note that the action is also
-            added to self.actions list.
-        :rtype: QAction
-        """
-
-        icon = QIcon(icon_path)
-        action = QAction(text, parent)
-        action.triggered.connect(callback)
-        action.setEnabled(enabled_flag)
-
-        if status_tip is not None:
-            action.setStatusTip(status_tip)
-
-        if whats_this is not None:
-            action.setWhatsThis(whats_this)
-
-        if add_to_toolbar:
-            self.toolbar.addAction(action)
-
-        if add_to_menu:
-            self.iface.addPluginToMenu(
-                self.menu,
-                action)
-
-        self.actions.append(action)
-
-        return action
+        # Must be set in initGui() to survive plugin reloads
+        self.first_start = None
 
 
     def initGui(self):
@@ -194,7 +95,17 @@ class ANADataAcquisition:
         self.iface.addToolBarIcon(self.action)
         self.iface.addPluginToMenu('&IPH - Plugins', self.action)
 
+        # will be set False in run()
+        self.first_start = True
+
     #--------------------------------------------------------------------------
+
+    def openconsole(self):
+
+        pythonConsole = iface.mainWindow().findChild(QDockWidget, 'PythonConsole')
+        if not pythonConsole or not pythonConsole.isVisible():
+
+            iface.actionShowPythonDialog().trigger()
 
     def onClosePlugin(self):
         """Cleanup necessary items here when plugin dockwidget is closed"""
@@ -204,12 +115,6 @@ class ANADataAcquisition:
         # disconnects
         self.dockwidget.closingPlugin.disconnect(self.onClosePlugin)
 
-        # remove this statement if dockwidget is to remain
-        # for reuse if plugin is reopened
-        # Commented next statement since it causes QGIS crashe
-        # when closing the docked window:
-        # self.dockwidget = None
-
         self.pluginIsActive = False
 
 
@@ -218,179 +123,312 @@ class ANADataAcquisition:
 
         #print "** UNLOAD ANADataAcquisition"
 
-        for action in self.actions:
-            self.iface.removePluginMenu(
-                self.tr(u'&ANA Data Acquisition'),
-                action)
-            self.iface.removeToolBarIcon(action)
-        # remove the toolbar
-        del self.toolbar
+        self.iface.removePluginMenu('&ANA Data Acquisition', self.action)
+        self.iface.removeToolBarIcon(self.action)
+
 
     #--------------------------------------------------------------------------
 
-    #Insert the stations's shape according to the user's choice            
+    #Insert the stations's shape according to the user's choice
     def mapInsert(self):
-        
+
         index = self.dockwidget.comboBox.currentIndex()
-        prec = "Precipitation_ANA" 
-        dis = "Discharge_Level_ANA"
-        level = "Discharge_Level_ANA"
+        prec = "Precipitation_ANA_v1.0"
+        dis = "Discharge_Level_ANA_v1.0"
+        level = "Discharge_Level_ANA_v1.0"
 
         if index == 0:
                 self.removeLayer()
-                        
+
         if index == 1:
                 self.removeLayer()
                 self.addLayer(prec)
-            
+
         if index == 2:
                 self.removeLayer()
                 self.addLayer(dis)
-                
+
         if index == 3:
                 self.removeLayer()
                 self.addLayer(level)
-            
-                       
+
+
     def addLayer(self, tipo):
         shape = QgsVectorLayer(self.plugdir + "/data/" + tipo + ".shp", tipo,"ogr")
         QgsProject.instance().addMapLayer(shape)
-            
-        
+        text_='Select the stations'
+        self.dockwidget.label_4.setText(text_)
+        self.dockwidget.label_4.setStyleSheet("font: 75 8pt")
+
+
     def removeLayer(self):
         layerMap = QgsProject.instance().mapLayers()
-        
+
         for name, layer in layerMap.items():
-            if "Precipitation_ANA" == str(layer.name()):
+            if "Precipitation_ANA_v1.0" == str(layer.name()):
                 registry = QgsProject.instance()
-                layerPrec = registry.mapLayersByName("Precipitation_ANA")[0]
+                layerPrec = registry.mapLayersByName("Precipitation_ANA_v1.0")[0]
                 QgsProject.instance().removeMapLayer(layerPrec)
-                
-            elif "Discharge_Level_ANA" == str(layer.name()):
+                text_='Select the stations'
+                self.dockwidget.label_4.setText(text_)
+
+            elif "Discharge_Level_ANA_v1.0" == str(layer.name()):
                 registry = QgsProject.instance()
-                layerDis = registry.mapLayersByName("Discharge_Level_ANA")[0]
+                layerDis = registry.mapLayersByName("Discharge_Level_ANA_v1.0")[0]
+                text_='Select the stations'
+                self.dockwidget.label_4.setText(text_)
                 QgsProject.instance().removeMapLayer(layerDis)
-                  
+
     def verifyLayer(self):
         layerMap = QgsProject.instance().mapLayers()
         for name, layer in layerMap.items():
-            if "Precipitation_ANA" == str(layer.name()):
+            if "Precipitation_ANA_v1.0" == str(layer.name()):
                 registry = QgsProject.instance()
-                layerPrec = registry.mapLayersByName("Precipitation_ANA")[0]
+                layerPrec = registry.mapLayersByName("Precipitation_ANA_v1.0")[0]
                 return layerPrec
-                
-            elif "Discharge_Level_ANA" == str(layer.name()):
+
+            elif "Discharge_Level_ANA_v1.0" == str(layer.name()):
                 registry = QgsProject.instance()
-                layerDis = registry.mapLayersByName("Discharge_Level_ANA")[0]
+                layerDis = registry.mapLayersByName("Discharge_Level_ANA_v1.0")[0]
                 return layerDis
-        
-        
-    def selectOutputDir(self):
-            dirname = QFileDialog.getExistingDirectory(None, "Open a folder", "C://")
-            self.dockwidget.lineEdit.setText(dirname)
-            
+
+
     #--------------------------------------------------------------------------
-            
+
     # lógica para pegar as features selecionadas e gerar arquivo das estações
     def gauge(self):
-         
+
+        index = 0 
 
         index = self.dockwidget.comboBox.currentIndex()
-        downDir = self.dockwidget.lineEdit.text()
-
-        if downDir == "":
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Critical)
-            msg.setText("Please chose the destination folder.")
-            msg.exec_()
-            return  
         
-        if index == 1:
-            arquivo = open(downDir + '/gauges_precipitation.txt', 'w')
-            
-        if index == 2:
-            arquivo = open(downDir + '/gauges_discharge.txt', 'w')
-
-        if index == 3:
-            arquivo = open(downDir + '/gauges_level.txt', 'w')
-            
-        layer = self.verifyLayer()
-        selection = layer.selectedFeatures()
-        print(layer)
-            
-        Codigo = []               
-        for f in selection:
-            line = '%d' % (f['Codigo']) #%i
-            Codigo.append(line)   
-            arquivo.write(line + "\n")      
-    
-            
-        if len(Codigo) == 0:
+        if index == 0:
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Critical)
-            msg.setText("Please select the stations.")
+            msg.setText("Please, choose data type.")
             msg.exec_()
             return
-    
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
-        msg.setText('Done! Check for the file "gauges_.txt" ')
-        msg.exec_()
-        
-    #--------------------------------------------------------------------------
+
+        else:
+            layer = self.verifyLayer()
+            selection = layer.selectedFeatures()
+
+            Codigo = []
+               
+            if len(selection) == 0:
+                text_=("Select the stations")
+                self.dockwidget.label_4.setText(text_)
+                self.dockwidget.label_4.setStyleSheet("color: rgb(255, 0, 0)")
+
             
-    #Open the executable download software    
-    def download(self):        
-        os.system(self.plugdir + '/data/Down_ANA.exe')
+                #msg = QMessageBox()
+                #msg.setIcon(QMessageBox.Critical)
+                #msg.setText("Please, select the stations.")
+                #msg.exec_()
+                #return
+
+            else: 
+
+                        
+                numero = len(selection)
+                if numero > 300:
+                    text_ = ("Select less than 300 stations")
+                    self.dockwidget.label_4.setText(text_)
+                    self.dockwidget.label_4.setStyleSheet("color: rgb(255, 0, 0)")
+                   
+
+                elif numero < 300:
+
+                    text_ = (str(numero) + " stations selected")
+                    self.dockwidget.label_4.setText(text_)
+                    self.dockwidget.label_4.setStyleSheet("color: rgb(0, 170, 0)")
+
+                   
+
+                    downDir = QFileDialog.getExistingDirectory(None, "Destination folder")
+
+                    if downDir == "":
+                        msg = QMessageBox()
+                        msg.setIcon(QMessageBox.Critical)
+                        msg.setText("Please choose the destination folder.")
+                        msg.exec_()
+                        return  
+                        
+                    else:     
+                        if index == 1:
+                            name_file_txt = 'gauges_precipitation.txt'
+                            
+                        if index == 2:
+                            name_file_txt = 'gauges_discharge.txt'
+
+                        if index == 3:
+                            name_file_txt = 'gauges_level.txt'
+                            
+                        arquivo = open(downDir + '/' + name_file_txt, 'w')    
+
+                        for f in selection:
+                            line = '%d' % (f['Codigo']) #%i
+                            Codigo.append(line)   
+                            arquivo.write(line + "\n")  
+
+                    
+                        msg = QMessageBox()
+                        msg.setIcon(QMessageBox.Information)
+                        msg.setText('Done! Check for the file ' + name_file_txt )
+                        msg.exec_()
+                
+
+    #--------------------------------------------------------------------------
+
+    #Open the executable download software
+    def download(self):
+
+        var = os.path.join(self.plugdir,"data", "Down_ANA.exe")
+        os.startfile(var)
+        print(var)
+
+    #--------------------------------------------------------------------------
+
+    def selecttxt(self):
+        self.arquivos_ava = QFileDialog.getOpenFileNames(None, "Choose files", "*.txt")[0]
+        numero=len(self.arquivos_ava)
+        self.dirname = os.path.dirname(self.arquivos_ava[0])
+        print(self.arquivos_ava)
+        self.dockwidget.label_20.setText(self.dirname)
+        text_=(str(numero) + " stations selected")
+        self.dockwidget.label_24.setText(text_)
+        self.dockwidget.label_24.setStyleSheet("color: rgb(0, 170, 0)")
+
+
+
+    def availability(self):
+
+        meses = []
+        stations = []
+        data_lists = []
+
+
+        txt_files = self.arquivos_ava
+
+        comp = len(txt_files)
+
+        if comp == 0:
+       
+            text_=("Select files")
+            self.dockwidget.label_24.setText(text_)
+            self.dockwidget.label_24.setStyleSheet("color: rgb(255, 0, 0)")
+            #msg = QMessageBox()
+            #msg.setIcon(QMessageBox.Critical)
+            #msg.setText("Select files")
+            #msg.exec_()
+            #return
+
+        else:
+
+            for estacaoPath in txt_files:
+
+                stations.append(Path(estacaoPath).stem)
+                print(Path(estacaoPath).stem)
+                file = open(estacaoPath,'r')
+                content = {}
+                final_list_station = []
+
+                for line in file.readlines():
+                    day, month, year, value = line.split()
+                    if not year in content:
+                        content[year] = {}
+                    if not month in content[year]:
+                        content[year][month] = []
+                    value = float(value)
+                    content[year][month].append(1 if value != -1.0 else 0)
+
+                for year in content:
+                    for month in content[year]:
+                        total = sum(content[year][month])
+                        num_days = len(content[year][month])
+                        final_list_station.append(total/num_days * 100)
+                        month_string = f"{month}_{year}"
+                        if month_string not in meses:
+                            meses.append(month_string)
+
+                data_lists.append(final_list_station)
+
+
+            data = np.vstack(data_lists)
+            data_t = data.transpose().tolist()
+
+            with open(os.path.join(self.dirname, 'Data_availability_REPORT.csv'), 'w') as f:
+                f.write(','.join(['MONTH_YEAR / STATION'] + stations) + '\n')
+                for index_month, sta_data in zip(meses, data_t):
+                    line_contents = [str(percent) for percent in ([index_month] + sta_data)]
+                    f.write(','.join(line_contents) + '\n')
+            
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Information)
+                msg.setText("Done! Check for the data availability report on the stations' folder!")
+                msg.exec_()
+                return
+
+        # IMAGEM DA DISPONIBILIDADE DE DADOS. DESCONFIGURADA, DEIXEI APENAS SALVA EM CSV
+
+        # fig, ax = plt.subplots()
+        # im = ax.imshow(data)
+
+        # # We want to show all ticks...
+        # ax.set_xticks(np.arange(len(meses)))
+        # ax.set_yticks(np.arange(len(stations)))
+        # # ... and label them with the respective list entries
+        # ax.set_xticklabels(meses)
+        # ax.set_yticklabels(stations)
+
+        # # Rotate the tick labels and set their alignment.
+        # plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+        #          rotation_mode="anchor")
+
+        # # Loop over data dimensions and create text annotations.
+        # for i in range(len(stations)):
+        #     for j in range(len(meses)):
+        #         text = ax.text(j, i, "",
+        #                        ha="center", va="center", color="w")
+
+        # ax.set_title("Percentage of data availability")
+        # fig.tight_layout()
+
+        # divider = make_axes_locatable(ax)
+        # cax = divider.append_axes("right", size="20%", pad=0.05)
+
+        # plt.colorbar(im, cax=cax)
+        # plt.show()
 
     #--------------------------------------------------------------------------
 
     def run(self):
         """Run method that loads and starts the plugin"""
-        
-        
 
-        if not self.pluginIsActive:
-            self.pluginIsActive = True
+        if self.first_start == True:
+            self.first_start = False
+            self.dockwidget = ANADataAcquisitionDockWidget()
 
             #print "** STARTING ANADataAcquisition"
-
-            self.dockwidget.pushButton_3.clicked.connect(self.selectOutputDir)
-                    
+            
             self.dockwidget.comboBox.clear()
-        
+
             self.dockwidget.show()
-            
-            self.dockwidget.comboBox.currentIndexChanged.connect(self.mapInsert)    
-            
+
+            self.dockwidget.comboBox.currentIndexChanged.connect(self.mapInsert)
+
             self.dockwidget.pushButton_2.clicked.connect(self.download)
-            
+
             self.dockwidget.pushButton.clicked.connect(self.gauge)
-            
-            listInfos = [" ", "Precipitation", "Discharge", u"Level"]        
-            
+
+            self.dockwidget.pushButton_4.clicked.connect(self.selecttxt)
+
+            self.dockwidget.pushButton_5.clicked.connect(self.availability)
+
+
+            listInfos = [" ", "Precipitation", "Discharge", u"Level"]
+
             self.dockwidget.comboBox.addItems(listInfos)
-            
-            self.removeLayer()
 
-
-            # dockwidget may not exist if:
-            #    first run of plugin
-            #    removed on close (see self.onClosePlugin method)
-            if self.dockwidget == None:
-                # Create the dockwidget (after translation) and keep reference
-                self.dockwidget = ANADataAcquisitionDockWidget()
-
-            # connect to provide cleanup on closing of dockwidget
-            self.dockwidget.closingPlugin.connect(self.onClosePlugin)
-
-            # show the dockwidget
-            # TODO: fix to allow choice of dock location
-            self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dockwidget)
-            self.dockwidget.show()
-            
-            
-            
-            
-            
-            
+        self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dockwidget)
+        self.dockwidget.show()
